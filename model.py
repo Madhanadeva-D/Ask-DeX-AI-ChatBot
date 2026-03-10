@@ -1,8 +1,7 @@
 """
-model.py
-────────
-Pure Python API layer for Qwen3-VL-235B-A22B-Thinking via OpenRouter.
-Uses requests + json.dumps (exact OpenRouter pattern).
+model.py — AskDeva API layer
+Uses requests + json.dumps via OpenRouter.
+KEY FIX: API key is read fresh on every call, not cached at import time.
 """
 
 import os
@@ -13,28 +12,35 @@ from io import BytesIO
 import requests
 from dotenv import load_dotenv
 
-load_dotenv("env")
+# Reload env fresh every time this module is used
+def _get_api_key():
+    load_dotenv("env", override=True)
+    return os.getenv("OPENROUTER_API_KEY", "").strip()
 
-API_KEY   = os.getenv("OPENROUTER_API_KEY", "")
+# Read once for display/checks in app.py
+load_dotenv("env", override=True)
+API_KEY  = os.getenv("OPENROUTER_API_KEY", "").strip()
 SITE_URL  = os.getenv("YOUR_SITE_URL",  "http://localhost:8501")
-SITE_NAME = os.getenv("YOUR_SITE_NAME", "Qwen3-VL Assistant")
+SITE_NAME = os.getenv("YOUR_SITE_NAME", "AskDeva")
 
-MODEL    = "qwen/qwen3-vl-235b-a22b-thinking"
-API_URL  = "https://openrouter.ai/api/v1/chat/completions"
+MODEL   = "qwen/qwen3-vl-235b-a22b-thinking"
+API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
-SYSTEM_PROMPT = """You are Qwen3-VL, a powerful multimodal AI assistant.
+SYSTEM_PROMPT = """You are Deva, a powerful multimodal AI assistant built by AskDeva.
 You can analyze images, charts, diagrams, screenshots, and documents.
 Solve STEM and math problems with step-by-step reasoning.
 Perform OCR and extract text from images. Convert UI screenshots to code.
-Be accurate, thorough, and concise."""
+Be accurate, helpful, and concise."""
 
 
 def get_headers():
+    """Always reads the key fresh — avoids stale cached value."""
+    key = _get_api_key()
     return {
-        "Authorization": f"Bearer {API_KEY}",
+        "Authorization": f"Bearer {key}",
         "Content-Type": "application/json",
         "HTTP-Referer": SITE_URL,
-        "X-OpenRouter-Title": SITE_NAME,
+        "X-Title": SITE_NAME,
     }
 
 
@@ -66,16 +72,19 @@ def chat(messages, max_tokens=2048, temperature=0.7):
         "max_tokens": max_tokens,
         "temperature": temperature,
     }
-    r = requests.post(url=API_URL, headers=get_headers(), data=json.dumps(payload))
+    r = requests.post(
+        url=API_URL,
+        headers=get_headers(),
+        data=json.dumps(payload),
+        timeout=60,
+    )
     if r.status_code != 200:
         raise Exception(f"API Error {r.status_code}: {r.text}")
     return r.json()["choices"][0]["message"]["content"]
 
 
 def chat_stream(messages, max_tokens=2048, temperature=0.7):
-    """
-    Streaming generator. FIXED: safely skips SSE events where choices is empty.
-    """
+    """Streaming generator — safely skips empty SSE events."""
     payload = {
         "model": MODEL,
         "messages": [{"role": "system", "content": SYSTEM_PROMPT}] + messages,
@@ -85,7 +94,11 @@ def chat_stream(messages, max_tokens=2048, temperature=0.7):
     }
 
     with requests.post(
-        url=API_URL, headers=get_headers(), data=json.dumps(payload), stream=True
+        url=API_URL,
+        headers=get_headers(),
+        data=json.dumps(payload),
+        stream=True,
+        timeout=120,
     ) as response:
 
         if response.status_code != 200:
@@ -103,7 +116,6 @@ def chat_stream(messages, max_tokens=2048, temperature=0.7):
                 chunk = json.loads(decoded)
             except json.JSONDecodeError:
                 continue
-            # SAFE: skip if choices is missing or empty list
             choices = chunk.get("choices")
             if not choices:
                 continue

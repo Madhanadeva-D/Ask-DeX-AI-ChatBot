@@ -126,7 +126,7 @@ with st.sidebar:
     st.markdown("""
         <div style="padding: 10px 0 20px;">
             <h2 style="color:#4FACFE; margin-bottom:0;">✦ AskDeva</h2>
-            <p style="font-size:0.8rem; color:#666;">Vision Model: <b>DevaCore</b></p>
+            <p style="font-size:0.8rem; color:#666;">Vision Model: <b>Qwen: Qwen3 VL 235B A22B Thinking</b></p>
         </div>
     """, unsafe_allow_html=True)
     
@@ -224,6 +224,3 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
         st.session_state.messages.append({"role": "assistant", "content": full_response})
         st.session_state.api_messages.append({"role": "assistant", "content": full_response})
         st.rerun()
-
-
-# python -m streamlit run app.py
