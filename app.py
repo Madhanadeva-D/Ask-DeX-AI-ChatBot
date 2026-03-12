@@ -1,17 +1,17 @@
 """
-app.py — AskDeX: Qwen3-VL ChatGPT-style UI
+app.py — AshDex: Qwen3-VL ChatGPT-style UI
 Run: python -m streamlit run app.py
 """
 
 import streamlit as st
 from PIL import Image
 from model import (
-    MODEL, API_KEY, pil_to_base64_url,
+    MODEL, get_api_key_display, pil_to_base64_url,
     text_message, image_message, chat_stream,
 )
 
 st.set_page_config(
-    page_title="AskDeX AI",
+    page_title="AshDex AI",
     page_icon="✦",
     layout="wide",
     initial_sidebar_state="collapsed",
@@ -57,12 +57,19 @@ html, body, [class*="css"] {
     border-right: 1px solid var(--border) !important;
 }
 
-/* HIDE default Streamlit chat input */
+/* Hide the default Streamlit chat input, but keep it functional */
 [data-testid="stChatInput"] {
-    display: none !important;
+    position: fixed !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    opacity: 0 !important;
+    pointer-events: auto !important;
+    z-index: 10000 !important;
+    height: 60px !important;
 }
 
-/* ── FLOATING PILL BAR ── */
+/* ── FLOATING PILL BAR (editable visual input) ── */
 .input-shell {
     position: fixed;
     bottom: 28px;
@@ -70,6 +77,7 @@ html, body, [class*="css"] {
     transform: translateX(-50%);
     width: min(720px, calc(100vw - 48px));
     z-index: 9999;
+    pointer-events: none;
 }
 .pill-bar {
     display: flex;
@@ -81,30 +89,43 @@ html, body, [class*="css"] {
     padding: 10px 12px 10px 18px;
     box-shadow: 0 8px 40px rgba(0,0,0,0.6);
     transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    pointer-events: none;
 }
 .pill-bar:focus-within {
     border-color: var(--border-hi);
     box-shadow: 0 8px 40px rgba(0,0,0,0.7), 0 0 0 3px var(--blue-glow);
 }
 .pill-attach {
-    color: var(--muted); cursor: pointer;
+    color: var(--muted);
     display: flex; align-items: center;
     padding: 4px; border-radius: 6px;
-    transition: color 0.15s; flex-shrink: 0;
+    transition: color 0.15s;
+    pointer-events: auto;
+    cursor: pointer;
 }
 .pill-attach:hover { color: var(--blue); }
 .pill-input {
-    flex: 1; background: transparent; border: none; outline: none;
-    color: var(--text); font-family: 'Sora', sans-serif;
-    font-size: 0.95rem; caret-color: var(--blue); min-width: 0;
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: var(--text);
+    font-family: 'Sora', sans-serif;
+    font-size: 0.95rem;
+    caret-color: var(--blue);
+    min-width: 0;
+    pointer-events: auto;
 }
 .pill-input::placeholder { color: var(--muted); }
 .pill-send {
     width: 36px; height: 36px; border-radius: 50%;
-    background: var(--blue); border: none; cursor: pointer;
+    background: var(--blue); border: none;
     display: flex; align-items: center; justify-content: center;
-    flex-shrink: 0; transition: background 0.15s, transform 0.1s;
+    flex-shrink: 0;
     box-shadow: 0 0 14px rgba(29,140,248,0.4);
+    pointer-events: auto;
+    cursor: pointer;
+    transition: background 0.15s, transform 0.1s;
 }
 .pill-send:hover { background: #3DA0FF; transform: scale(1.06); }
 .pill-send svg { fill: #000; width: 15px; height: 15px; }
@@ -200,11 +221,14 @@ for k, v in [("messages", []), ("api_messages", []), ("pending_img_b64", None)]:
         st.session_state[k] = v
 
 # ── SIDEBAR ───────────────────────────────────────────────────────────────────
+# Read the API key fresh every render so the status dot is always accurate.
+_api_key = get_api_key_display()
+
 with st.sidebar:
     st.markdown("""
-        <div style="padding:0 0 16px;">
-            <h2 style="color:#1D8CF8;margin-bottom:2px;font-size:1.3rem;">✦ AskDeX</h2>
-            <p style="font-size:0.7rem;color:#3A5070;margin:0;">Qwen3-VL · 235B A22B Thinking</p>
+        <div style="padding:0 0 10px;">
+            <h2 style="color:#1D8CF8;margin-bottom:2px;font-size:2rem;">✦ AshDex</h2>
+            <p style="font-size:0.8rem;color:#3A5070;margin:0;">Qwen3-VL · 235B A22B Thinking</p>
         </div>
     """, unsafe_allow_html=True)
 
@@ -215,39 +239,49 @@ with st.sidebar:
         st.rerun()
 
     st.markdown("<hr style='border-color:#1A2335;margin:14px 0;'>", unsafe_allow_html=True)
-    st.markdown("<p style='font-size:0.78rem;color:#3A5070;margin-bottom:6px;'>📎 Attach Image</p>", unsafe_allow_html=True)
+    st.markdown("<p style='font-size:1rem;color:#3A5070;margin-bottom:6px;'>📎 Attach Image</p>", unsafe_allow_html=True)
     uploaded = st.file_uploader("img", type=["png","jpg","jpeg","webp"], label_visibility="collapsed")
     if uploaded:
         pil_img = Image.open(uploaded)
-        st.image(pil_img, use_column_width=True)
+        st.image(pil_img, use_container_width=True)  # Fixed: use_column_width is deprecated
         uploaded.seek(0)
         st.session_state.pending_img_b64 = pil_to_base64_url(Image.open(uploaded))
     else:
         st.session_state.pending_img_b64 = None
 
     st.markdown("<hr style='border-color:#1A2335;margin:14px 0;'>", unsafe_allow_html=True)
-    dot = "🔵" if API_KEY else "🔴"
-    st.markdown(f"<p style='font-size:0.7rem;color:#2A4060;'>{dot} {'Connected' if API_KEY else 'No API Key'}</p>", unsafe_allow_html=True)
+    dot = "🔵" if _api_key else "🔴"
+    st.markdown(f"<p style='font-size:0.7rem;color:#2A4060;'>{dot} {'Connected' if _api_key else 'No API Key'}</p>", unsafe_allow_html=True)
     st.markdown(f"<p style='font-size:0.7rem;color:#2A4060;'>Model: {MODEL}</p>", unsafe_allow_html=True)
 
 # ── MESSAGE RENDERING ─────────────────────────────────────────────────────────
-def render_message(role, content, img_b64=None):
-    if role == "user":
-        img_tag = (
-            f'<img src="{img_b64}" style="width:100%;border-radius:10px;margin-bottom:9px;display:block;"/>'
-            if img_b64 else ""
+def render_user_message(content: str, img_b64: str | None = None):
+    """Render a user bubble. Content is plain text — escaped before injection."""
+    import html as _html
+    safe_content = _html.escape(content).replace("\n", "<br>")
+    img_tag = (
+        f'<img src="{img_b64}" style="width:100%;border-radius:10px;margin-bottom:9px;display:block;"/>'
+        if img_b64 else ""
+    )
+    st.markdown(f"""
+    <div class="msg-row" style="flex-direction:row-reverse;">
+        <div class="av-wrap av-user">U</div>
+        <div class="user-content msg-content">{img_tag}{safe_content}</div>
+    </div>""", unsafe_allow_html=True)
+
+
+def render_bot_message(content: str):
+    """Render an assistant bubble using st.markdown for proper markdown support."""
+    col_av, col_msg = st.columns([0.06, 0.94])
+    with col_av:
+        st.markdown(
+            '<div class="av-wrap av-bot" style="margin-top:4px;">D</div>',
+            unsafe_allow_html=True,
         )
-        st.markdown(f"""
-        <div class="msg-row" style="flex-direction:row-reverse;">
-            <div class="av-wrap av-user">U</div>
-            <div class="user-content msg-content">{img_tag}{content}</div>
-        </div>""", unsafe_allow_html=True)
-    else:
-        st.markdown(f"""
-        <div class="msg-row">
-            <div class="av-wrap av-bot">D</div>
-            <div class="bot-content msg-content">{content}</div>
-        </div>""", unsafe_allow_html=True)
+    with col_msg:
+        # st.markdown handles code blocks, bold, tables, etc. correctly
+        st.markdown(content)
+
 
 # ── MAIN CHAT AREA ────────────────────────────────────────────────────────────
 st.markdown('<div class="chat-area">', unsafe_allow_html=True)
@@ -255,7 +289,7 @@ st.markdown('<div class="chat-area">', unsafe_allow_html=True)
 if not st.session_state.messages:
     st.markdown("""
     <div class="welcome-wrap">
-        <div class="welcome-logo">✦ AskDeX</div>
+        <div class="welcome-logo">✦ AshDex</div>
         <p class="welcome-sub">What can I help you with?</p>
         <div class="suggestion-grid">
             <div class="sug-card"><b>🎨 Creative Vision</b>Describe a scene and suggest improvements.</div>
@@ -266,15 +300,18 @@ if not st.session_state.messages:
     </div>""", unsafe_allow_html=True)
 else:
     for msg in st.session_state.messages:
-        render_message(msg["role"], msg["content"], msg.get("img_b64"))
+        if msg["role"] == "user":
+            render_user_message(msg["content"], msg.get("img_b64"))
+        else:
+            render_bot_message(msg["content"])
 
 st.markdown('</div>', unsafe_allow_html=True)
 
-# ── FLOATING PILL BAR + JS BRIDGE ────────────────────────────────────────────
+# ── VISUAL PILL BAR (editable, robust submit) ─────────────────────────────────
 st.markdown("""
 <div class="input-shell">
     <div class="pill-bar" id="pillBar">
-        <span class="pill-attach" title="Attach image (open sidebar)">
+        <span class="pill-attach" id="attachIcon" title="Attach image (open sidebar)">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
                  stroke="currentColor" stroke-width="2"
                  stroke-linecap="round" stroke-linejoin="round">
@@ -282,7 +319,7 @@ st.markdown("""
             </svg>
         </span>
         <input class="pill-input" id="pillInput" type="text"
-               placeholder="Ask anything" autocomplete="off" autofocus />
+               placeholder="Ask anything" autofocus />
         <button class="pill-send" id="pillSend" title="Send">
             <svg viewBox="0 0 24 24"><path d="M2 21l21-9L2 3v7l15 2-15 2v7z"/></svg>
         </button>
@@ -291,74 +328,116 @@ st.markdown("""
 
 <script>
 (function() {
-    function getTA() {
-        return document.querySelector('[data-testid="stChatInput"] textarea');
-    }
-    function send(value) {
-        const ta = getTA();
-        if (!ta || !value.trim()) return;
-        const setter = Object.getOwnPropertyDescriptor(
-            window.HTMLTextAreaElement.prototype, 'value').set;
-        setter.call(ta, value);
-        ta.dispatchEvent(new Event('input', { bubbles: true }));
-        setTimeout(() => {
-            ta.dispatchEvent(new KeyboardEvent('keydown',
-                { key: 'Enter', keyCode: 13, bubbles: true }));
-        }, 60);
-    }
-
-    document.getElementById('pillSend').addEventListener('click', () => {
-        const inp = document.getElementById('pillInput');
-        send(inp.value);
-        inp.value = '';
-    });
-
-    document.getElementById('pillInput').addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            send(e.target.value);
-            e.target.value = '';
+    function init() {
+        const realInput = document.querySelector('[data-testid="stChatInput"] textarea');
+        if (!realInput) {
+            setTimeout(init, 100);
+            return;
         }
-    });
 
-    // Open sidebar when attach icon clicked
-    document.querySelector('.pill-attach').addEventListener('click', () => {
-        const btn = document.querySelector('[data-testid="stSidebarNavButton"]')
-                 || document.querySelector('[data-testid="stSidebarCollapsedControl"]');
-        btn && btn.click();
-    });
+        const pillInput = document.getElementById('pillInput');
+        const pillSend = document.getElementById('pillSend');
+        const attachIcon = document.getElementById('attachIcon');
 
-    setTimeout(() => document.getElementById('pillInput')?.focus(), 400);
+        function setRealInputValue(value) {
+            const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
+            setter.call(realInput, value);
+            realInput.dispatchEvent(new Event('input', { bubbles: true }));
+            realInput.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+
+        pillInput.addEventListener('input', function() {
+            setRealInputValue(pillInput.value);
+        });
+
+        realInput.addEventListener('input', function() {
+            pillInput.value = realInput.value;
+        });
+
+        function submitMessage() {
+            if (!pillInput.value.trim()) return;
+            realInput.focus();
+            const enterEvent = new KeyboardEvent('keydown', {
+                key: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true
+            });
+            realInput.dispatchEvent(enterEvent);
+            const keypressEvent = new KeyboardEvent('keypress', {
+                key: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true
+            });
+            realInput.dispatchEvent(keypressEvent);
+            pillInput.value = '';
+            setRealInputValue('');
+        }
+
+        pillInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                submitMessage();
+            }
+        });
+
+        pillSend.addEventListener('click', function() {
+            submitMessage();
+        });
+
+        attachIcon.addEventListener('click', function() {
+            const btn = document.querySelector('[data-testid="stSidebarNavButton"]')
+                     || document.querySelector('[data-testid="stSidebarCollapsedControl"]');
+            if (btn) btn.click();
+        });
+
+        pillInput.value = realInput.value;
+    }
+
+    init();
 })();
 </script>
 """, unsafe_allow_html=True)
 
-# ── HIDDEN STREAMLIT BRIDGE INPUT ─────────────────────────────────────────────
+# ── REAL CHAT INPUT (invisible but functional) ───────────────────────────────
 if prompt := st.chat_input("Ask anything"):
-    if not API_KEY:
-        st.error("⚠️ API key missing.")
+    if not _api_key:
+        st.error("⚠️ API key missing. Add OPENROUTER_API_KEY to your env file.")
         st.stop()
 
     img_b64 = st.session_state.get("pending_img_b64")
+
+    # Append user message to display history
     st.session_state.messages.append({"role": "user", "content": prompt, "img_b64": img_b64})
+
+    # Build API message (with or without image)
     api_msg = image_message("user", prompt, img_b64) if img_b64 else text_message("user", prompt)
     st.session_state.api_messages.append(api_msg)
-    st.rerun()
 
-# ── STREAM RESPONSE ───────────────────────────────────────────────────────────
-if st.session_state.messages and st.session_state.messages[-1]["role"] == "user":
-    with st.empty():
+    # Clear the pending image so it isn't re-attached to the next message
+    st.session_state.pending_img_b64 = None
+
+    # ── STREAM RESPONSE ──────────────────────────────────────────────────────
+    # Render user message immediately, then stream bot response below it.
+    render_user_message(prompt, img_b64)
+
+    col_av, col_msg = st.columns([0.06, 0.94])
+    with col_av:
+        st.markdown(
+            '<div class="av-wrap av-bot" style="margin-top:4px;">D</div>',
+            unsafe_allow_html=True,
+        )
+    with col_msg:
+        message_placeholder = st.empty()
         full_response = ""
-        for chunk in chat_stream(st.session_state.api_messages, max_tokens=2048, temperature=0.7):
-            full_response += chunk
-            st.markdown(f"""
-            <div class="msg-row">
-                <div class="av-wrap av-bot">D</div>
-                <div class="bot-content msg-content">
-                    {full_response}<span style="color:#1D8CF8;animation:blink 1s infinite;">▌</span>
-                </div>
-            </div>""", unsafe_allow_html=True)
+        try:
+            for chunk in chat_stream(st.session_state.api_messages, max_tokens=2048, temperature=0.7):
+                full_response += chunk
+                # Show streaming text with a blinking cursor appended as plain text
+                message_placeholder.markdown(full_response + "▌")
+            # Final render without cursor
+            message_placeholder.markdown(full_response)
+        except Exception as e:
+            error_msg = f"⚠️ Error communicating with the API: {e}"
+            message_placeholder.error(error_msg)
+            # Don't save a failed response to history
+            st.stop()
 
-        st.session_state.messages.append({"role": "assistant", "content": full_response})
-        st.session_state.api_messages.append({"role": "assistant", "content": full_response})
-        st.rerun()
+    # Persist the completed response
+    st.session_state.messages.append({"role": "assistant", "content": full_response})
+    st.session_state.api_messages.append({"role": "assistant", "content": full_response})
